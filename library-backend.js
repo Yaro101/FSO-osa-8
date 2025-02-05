@@ -1,5 +1,7 @@
 const { ApolloServer } = require('@apollo/server')
 const { startStandaloneServer } = require('@apollo/server/standalone')
+// uuid library for generating unique IDs for new books and authors
+const { v1: uuid } = require('uuid');
 
 let authors = [
   {
@@ -17,11 +19,11 @@ let authors = [
     id: "afa5b6f1-344d-11e9-a414-719c6709cf3e",
     born: 1821
   },
-  { 
+  {
     name: 'Joshua Kerievsky', // birthyear not known
     id: "afa5b6f2-344d-11e9-a414-719c6709cf3e",
   },
-  { 
+  {
     name: 'Sandi Metz', // birthyear not known
     id: "afa5b6f3-344d-11e9-a414-719c6709cf3e",
   },
@@ -69,7 +71,7 @@ let books = [
     author: 'Joshua Kerievsky',
     id: "afa5de01-344d-11e9-a414-719c6709cf3e",
     genres: ['refactoring', 'patterns']
-  },  
+  },
   {
     title: 'Practical Object-Oriented Design, An Agile Primer Using Ruby',
     published: 2012,
@@ -93,21 +95,95 @@ let books = [
   },
 ]
 
-/*
-  you can remove the placeholder query once your first one has been implemented 
-*/
 
 const typeDefs = `
+  type Author {
+    name: String!
+    id: ID!
+    born: Int
+    bookCount: Int!
+  }
+
+  type Book {
+    title: String!
+    published: Int!
+    author: String!
+    id: ID!
+    genres: [String!]!
+  }
+
   type Query {
-    dummy: Int
+    bookCount: Int!
+    authorCount: Int!
+    allBooks(author: String, genre: String): [Book!]!
+    allAuthors: [Author!]!
+  }
+
+  type Mutation {
+    addBook(
+      title: String!
+      author: String!
+      published: Int
+      genres: [String!]!
+    ): Book!
+    editAuthor(name: String!, setBornTo: Int!): Author    
   }
 `
 
 const resolvers = {
   Query: {
-    dummy: () => 0
-  }
-}
+    bookCount: () => books.length,
+    authorCount: () => authors.length,
+    allBooks: (root, args) => {
+      let filteredBooks = books;
+      if (args.author) {
+        filteredBooks = filteredBooks.filter((book) => book.author === args.author);
+      }
+      if (args.genre) {
+        filteredBooks = filteredBooks.filter((book) => book.genres.includes(args.genre));
+      }
+      return filteredBooks;
+    },
+    allAuthors: () => {
+      return authors.map((author) => {
+        const bookCount = books.filter((book) => book.author === author.name).length;
+        return {
+          ...author,
+          bookCount,
+        };
+      });
+    },
+  },
+  Mutation: {
+    addBook: (root, args) => {
+      const book = { ...args, id: uuid() };
+      books = books.concat(book);
+
+      if (!authors.find((author) => author.name === args.author)) {
+        const author = { name: args.author, id: uuid(), born: null, bookCount: 1 };
+        authors = authors.concat(author);
+      } else {
+        authors = authors.map((author) =>
+          author.name === args.author
+            ? { ...author, bookCount: author.bookCount + 1 }
+            : author
+        );
+      }
+
+      return book;
+    },
+    editAuthor: (root, args) => {
+      const author = authors.find((a) => a.name === args.name);
+      if (!author) {
+        return null;
+      }
+
+      const updatedAuthor = { ...author, born: args.setBornTo };
+      authors = authors.map((a) => (a.name === args.name ? updatedAuthor : a));
+      return updatedAuthor;
+    },
+  },
+};
 
 const server = new ApolloServer({
   typeDefs,
